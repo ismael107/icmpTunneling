@@ -1,0 +1,64 @@
+from scapy.all import *
+import signal
+import sys
+import re
+import binascii
+
+def packet_callback(packet):
+    if packet.haslayer(ICMP):
+        # Extraer el contenido del campo de datos del paquete ICMP
+        icmp_data = packet[Raw].load.decode(errors='ignore')
+
+        # Guardar el contenido en el archivo
+        with open('recibidoBruto.txt', 'a', encoding='utf-8') as file:
+            file.write(icmp_data + '\n')
+
+        print(f"Datos ICMP recibido y guardado: {icmp_data}")
+
+def signal_handler(sig, frame):
+    print("\nInterrupción recibida, finalizando y reconstruyendo el PDF...")
+    reconstruct_pdf()
+    sys.exit(0)
+
+def reconstruct_pdf():
+    try:
+        # Leer el archivo recibidoBruto.txt
+        with open('recibidoBruto.txt', 'r', encoding='utf-8') as file:
+            data = file.read()
+
+        # Usar una expresión regular para extraer los datos hexadecimales y marcas
+        pattern = r'\[-> (\d+)\] ([0-9a-fA-F]+) \[<- F\]'
+        blocks = re.findall(pattern, data)
+
+        # Eliminar duplicados usando un set
+        unique_blocks = {}
+        for index, hex_data in blocks:
+            if index not in unique_blocks:
+                unique_blocks[index] = hex_data
+
+        # Ordenar los bloques por índice
+        sorted_blocks = [unique_blocks[key] for key in sorted(unique_blocks.keys(), key=int)]
+
+        # Convertir la lista de bloques hexadecimales en una sola cadena binaria
+        binary_data = ''.join(sorted_blocks)
+        pdf_data = binascii.unhexlify(binary_data)
+# Guardar los datos binarios como un archivo PDF
+        with open('recibidoExfiltradoPdf.pdf', 'wb') as pdf_file:
+            pdf_file.write(pdf_data)
+
+        print("Archivo PDF reconstruido como recibidoExfiltradoPdf.pdf")
+    
+    except Exception as e:
+        print(f"Error al reconstruir el archivo PDF: {e}")
+
+def main():
+    # Configurar el manejador de señales para manejar Ctrl + C
+    signal.signal(signal.SIGINT, signal_handler)
+    
+    print("Esperando paquetes ICMP. Presiona Ctrl + C para finalizar y reconstruir el PDF...")
+    
+    # Escuchar los paquetes ICMP indefinidamente
+    sniff(filter="icmp", prn=packet_callback)
+
+if __name__ == "__main__":
+    main()
